@@ -1,0 +1,72 @@
+Local Debian 13 build
+====================
+
+Base: upstream v1.4.7 and Debian source package 1.4.7-1.
+The Debian patch series is retained. The local packaging fixes the
+Recommends field name, uses watch format 4 and an explicit Priority for
+Trixie tooling, and excludes .deb-build from source diffs.
+Debian build flags are exported, including those for Intel GPU C sources.
+This is a local backport and is not published in the Debian archive.
+
+Intel GPU memory
+----------------
+The local memory patch adds a GPU RAM (user) section with allocation and
+residency bounds from readable i915 DRM clients of the calling user.
+Repeated client IDs are deduplicated per PCI device. Shared buffer IDs are
+not exported, so bounds replace a potentially double-counted point value.
+An asterisk denotes incomplete visibility; unavailable data is N/A.
+Definitions and limitations are in README.md.
+
+Run the focused parser/accounting/procfs tests under ASan/UBSan:
+  cmake -S . -B .deb-build/dev -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_CXX_COMPILER=clang++-19 -DBTOP_LTO=OFF \
+    '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer' \
+    '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'
+  cmake --build .deb-build/dev --target intel_gpu_memory_test -j 4
+  .deb-build/dev/tests/intel_gpu_memory_test
+
+Intel GPU access
+----------------
+The package sets CAP_PERFMON on /usr/bin/btop during configuration and
+depends on libcap2-bin. The application runs as the calling user.
+On Debian's kernel, perf_event_paranoid=3 blocks CAP_PERFMON as well.
+Set it to 2 to permit the Intel PMU counters:
+  sudo /usr/sbin/sysctl -w kernel.perf_event_paranoid=2
+
+This also permits unprivileged profiling of a user's own userspace processes.
+To retain the setting after reboot, an administrator can create
+/etc/sysctl.d/90-btop-intel-gpu.conf containing:
+  kernel.perf_event_paranoid = 2
+
+The package does not change the system-wide sysctl setting automatically.
+
+Install host tools:
+  sudo apt install sbuild mmdebstrap uidmap devscripts debian-keyring debhelper lintian
+
+Create the build environment as a regular user (once):
+  mkdir -p ~/.cache/sbuild
+  mmdebstrap --mode=unshare --variant=buildd --include=ca-certificates \
+    --aptopt='APT::Update::Error-Mode "any"' --arch=amd64 --format=tar \
+    --skip=output/mknod trixie ~/.cache/sbuild/trixie-amd64.tar \
+    'deb https://deb.debian.org/debian trixie main' \
+    'deb https://deb.debian.org/debian trixie-updates main' \
+    'deb https://security.debian.org/debian-security trixie-security main'
+
+Build from the repository root (the output directory is ignored by Git):
+  mkdir -p .deb-build
+  cd .deb-build
+  dget --download-only https://deb.debian.org/debian/pool/main/b/btop/btop_1.4.7-1.dsc
+  dpkg-source --before-build ..
+  dpkg-source --build ..
+  sbuild --chroot-mode=unshare --dist=trixie-backports --arch=amd64 --jobs=8 \
+    --no-run-lintian --debbuildopt=-v1.3.2-0.1 \
+    --chroot="$HOME/.cache/sbuild/trixie-amd64.tar" \
+    btop_1.4.7-1~bpo13+1.dsc
+
+Check the result with the host's lintian:
+  lintian btop_1.4.7-1~bpo13+1.dsc \
+    btop_1.4.7-1~bpo13+1_amd64.changes
+
+Simulate installation with apt before installing the resulting amd64 .deb.
+
+The working tree keeps the Debian patches applied for development.

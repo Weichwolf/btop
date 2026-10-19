@@ -18,3 +18,11 @@ target_link_libraries(btop_test libbtop_test)
 
 include(GoogleTest)
 gtest_discover_tests(btop_test)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_executable(intel_gpu_memory_test intel_gpu_memory.cpp ../src/linux/intel_gpu_memory.cpp)
+  target_include_directories(intel_gpu_memory_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  target_link_libraries(intel_gpu_memory_test PRIVATE GTest::gtest_main)
+  target_compile_options(intel_gpu_memory_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  gtest_discover_tests(intel_gpu_memory_test)
+endif()

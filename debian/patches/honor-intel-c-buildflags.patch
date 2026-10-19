@@ -1,0 +1,12 @@
+Description: Honor Debian compiler and preprocessor flags in Intel GPU C sources
+ The upstream C compilation rule ignores CFLAGS and CPPFLAGS, including
+ Debian's optimization and hardening flags. Pass them to the C compiler.
+Author: Weichwolf <56591353+Weichwolf@users.noreply.github.com>
+Forwarded: no
+--- a/Makefile
++++ b/Makefile
+@@ -413,2 +413,2 @@
+-	@$(VERBOSE) || printf "$(CC) $(INC) -c -o $@ $<\n"
+-	@$(CC) $(INC) -w -c -o $@ $< || exit 1
++	@$(VERBOSE) || printf "$(CC) $(CFLAGS) $(CPPFLAGS) $(INC) -w -c -o $@ $<\n"
++	@$(CC) $(CFLAGS) $(CPPFLAGS) $(INC) -w -c -o $@ $< || exit 1

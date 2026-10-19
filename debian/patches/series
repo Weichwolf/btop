@@ -1,0 +1,5 @@
+ftbfs-printf-string-error-in-info-target.patch
+Fix-btop-with-amd-gpu-on-rocm-7-as-in-Ubuntu-26.04.patch
+honor-intel-c-buildflags.patch
+intel-shared-memory-accounting.patch
+fork-readme.patch

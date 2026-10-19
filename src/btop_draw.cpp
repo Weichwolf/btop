@@ -1016,6 +1016,23 @@ namespace Gpu {
 	vector<Draw::Meter> enc_meter_vec = {};
 	vector<string> box = {};
 
+	string buffer_memory_range(long long lower, long long upper) {
+		if (lower == upper) return floating_humanizer(lower);
+		return floating_humanizer(lower) + "-" + floating_humanizer(upper);
+	}
+
+	string draw_buffer_memory(const gpu_buffer_memory& memory, int x, int y, int width) {
+		const string title = memory.partial ? "GPU RAM (user)*" : "GPU RAM (user)";
+		string out = Mv::to(y, x) + Theme::c("div_line") + Symbols::div_left + Symbols::h_line
+			+ Symbols::title_left + Theme::c("title") + Fx::b + title + Fx::ub + Theme::c("div_line")
+			+ Symbols::title_right + Symbols::h_line * (width - static_cast<int>(title.size()) - 5) + Symbols::div_right;
+		const string allocated = memory.available ? buffer_memory_range(memory.allocated_lower, memory.allocated_upper) : "N/A";
+		const string resident = memory.available ? buffer_memory_range(memory.resident_lower, memory.resident_upper) : "N/A";
+		out += Mv::to(y + 1, x + 1) + Theme::c("main_fg") + Fx::b + "Alloc:" + Fx::ub + rjust(allocated, width - 8);
+		out += Mv::to(y + 2, x + 1) + Theme::c("main_fg") + Fx::b + "Resident:" + Fx::ub + rjust(resident, width - 11);
+		return out;
+	}
+
     string draw(const gpu_info& gpu, unsigned long index, bool force_redraw, bool data_same) {
 		if (Runner::stopping) return "";
 
@@ -1123,6 +1140,11 @@ namespace Gpu {
 				+ Theme::c("div_line") + Symbols::v_line + Theme::c("main_fg") + Fx::b + "DEC " + enc_meter(gpu.decoder_utilization)
 				+ Theme::g("cpu").at(clamp(gpu.decoder_utilization, 0ll, 100ll)) + rjust(to_string(gpu.decoder_utilization), 4) + Theme::c("main_fg") + '%';
 			rows_used++;
+		}
+
+		if (gpu.buffer_memory.supported) {
+			out += draw_buffer_memory(gpu.buffer_memory, b_x, b_y + rows_used, b_width);
+			rows_used += 3;
 		}
 
 		if (gpu.supported_functions.mem_total or gpu.supported_functions.mem_used) {

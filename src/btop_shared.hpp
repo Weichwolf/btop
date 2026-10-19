@@ -145,6 +145,16 @@ namespace Gpu {
 	};
 
 	//* Per-device container for GPU info
+	struct gpu_buffer_memory {
+		bool supported = false;
+		bool available = false;
+		bool partial = false;
+		long long allocated_lower = 0;
+		long long allocated_upper = 0;
+		long long resident_lower = 0;
+		long long resident_upper = 0;
+	};
+
 	struct gpu_info {
 		std::unordered_map<string, deque<long long>> gpu_percent = {
 			{"gpu-totals", {}},
@@ -162,6 +172,7 @@ namespace Gpu {
 
 		long long mem_total = 0;
 		long long mem_used = 0;
+		gpu_buffer_memory buffer_memory;
 		deque<long long> mem_utilization_percent = {0}; // TODO: properly handle GPUs that can't report some stats
 		long long mem_clock_speed = 0; // MHz
 

@@ -1,0 +1,577 @@
+Description: Display Intel i915 GPU buffer allocation and residency bounds
+ Collect readable DRM clients owned by the caller, deduplicate client IDs,
+ and bound shared-buffer accounting without inventing a fixed VRAM capacity.
+ Add a GPU-box section, focused regression tests and user documentation.
+Author: Weichwolf <56591353+Weichwolf@users.noreply.github.com>
+Forwarded: no
+Last-Update: 2026-10-19
+
+--- btop-1.4.7.orig/CMakeLists.txt
++++ btop-1.4.7/CMakeLists.txt
+@@ -75,7 +75,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "OpenB
+ elseif(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
+   target_sources(libbtop PRIVATE src/netbsd/btop_collect.cpp)
+ elseif(LINUX)
+-  target_sources(libbtop PRIVATE src/linux/btop_collect.cpp)
++  target_sources(libbtop PRIVATE src/linux/btop_collect.cpp src/linux/intel_gpu_memory.cpp)
+   if(BTOP_GPU)
+     add_subdirectory(src/linux/intel_gpu_top)
+   endif()
+--- btop-1.4.7.orig/README.md
++++ btop-1.4.7/README.md
+@@ -479,6 +479,13 @@ See [GPU compatibility](#gpu-compatibili
+    git clone https://github.com/rocm/rocm_smi_lib.git --depth 1 -b rocm-5.6.x lib/rocm_smi_lib
+    ```
+ 
++ * **Intel GPU buffer memory (Linux i915)**
++
++    The GPU box shows `GPU RAM (user)`: `Alloc` is the size of requested graphics buffers, and `Resident` is the portion backed by memory. These are buffer statistics for readable DRM clients owned by the current user, not total system RAM or a fixed VRAM capacity. Both system and stolen-memory regions are included.
++
++    Repeated descriptors for the same DRM client are counted once. Because fdinfo does not identify individual shared buffers across clients, shared allocations are reported as lower and upper bounds. Equal bounds appear as one value. An asterisk marks incomplete visibility (for example, a process denies access); `N/A` means no usable records were available. Other users and kernel-only allocations are outside this accounting scope. Values refresh once per second.
++
++
+ <details>
+ <summary>
+ 
+--- btop-1.4.7.orig/src/btop_draw.cpp
++++ btop-1.4.7/src/btop_draw.cpp
+@@ -1016,6 +1016,23 @@ namespace Gpu {
+ 	vector<Draw::Meter> enc_meter_vec = {};
+ 	vector<string> box = {};
+ 
++	string buffer_memory_range(long long lower, long long upper) {
++		if (lower == upper) return floating_humanizer(lower);
++		return floating_humanizer(lower) + "-" + floating_humanizer(upper);
++	}
++
++	string draw_buffer_memory(const gpu_buffer_memory& memory, int x, int y, int width) {
++		const string title = memory.partial ? "GPU RAM (user)*" : "GPU RAM (user)";
++		string out = Mv::to(y, x) + Theme::c("div_line") + Symbols::div_left + Symbols::h_line
++			+ Symbols::title_left + Theme::c("title") + Fx::b + title + Fx::ub + Theme::c("div_line")
++			+ Symbols::title_right + Symbols::h_line * (width - static_cast<int>(title.size()) - 5) + Symbols::div_right;
++		const string allocated = memory.available ? buffer_memory_range(memory.allocated_lower, memory.allocated_upper) : "N/A";
++		const string resident = memory.available ? buffer_memory_range(memory.resident_lower, memory.resident_upper) : "N/A";
++		out += Mv::to(y + 1, x + 1) + Theme::c("main_fg") + Fx::b + "Alloc:" + Fx::ub + rjust(allocated, width - 8);
++		out += Mv::to(y + 2, x + 1) + Theme::c("main_fg") + Fx::b + "Resident:" + Fx::ub + rjust(resident, width - 11);
++		return out;
++	}
++
+     string draw(const gpu_info& gpu, unsigned long index, bool force_redraw, bool data_same) {
+ 		if (Runner::stopping) return "";
+ 
+@@ -1125,6 +1142,11 @@ namespace Gpu {
+ 			rows_used++;
+ 		}
+ 
++		if (gpu.buffer_memory.supported) {
++			out += draw_buffer_memory(gpu.buffer_memory, b_x, b_y + rows_used, b_width);
++			rows_used += 3;
++		}
++
+ 		if (gpu.supported_functions.mem_total or gpu.supported_functions.mem_used) {
+ 			out += Mv::to(b_y + rows_used, b_x);
+ 			if (gpu.supported_functions.mem_total and gpu.supported_functions.mem_used) {
+--- btop-1.4.7.orig/src/btop_shared.hpp
++++ btop-1.4.7/src/btop_shared.hpp
+@@ -145,6 +145,16 @@ namespace Gpu {
+ 	};
+ 
+ 	//* Per-device container for GPU info
++	struct gpu_buffer_memory {
++		bool supported = false;
++		bool available = false;
++		bool partial = false;
++		long long allocated_lower = 0;
++		long long allocated_upper = 0;
++		long long resident_lower = 0;
++		long long resident_upper = 0;
++	};
++
+ 	struct gpu_info {
+ 		std::unordered_map<string, deque<long long>> gpu_percent = {
+ 			{"gpu-totals", {}},
+@@ -162,6 +172,7 @@ namespace Gpu {
+ 
+ 		long long mem_total = 0;
+ 		long long mem_used = 0;
++		gpu_buffer_memory buffer_memory;
+ 		deque<long long> mem_utilization_percent = {0}; // TODO: properly handle GPUs that can't report some stats
+ 		long long mem_clock_speed = 0; // MHz
+ 
+--- btop-1.4.7.orig/src/linux/btop_collect.cpp
++++ btop-1.4.7/src/linux/btop_collect.cpp
+@@ -57,6 +57,7 @@ tab-size = 4
+ #include "../btop_tools.hpp"
+ 
+ #if defined(GPU_SUPPORT)
++	#include "intel_gpu_memory.hpp"
+ 	// Redefining C++ keywords fortunately has a warning in clang, however it's unavoidable here
+ 	// since the C library uses "class" as a struct member and keywords are not allowed to be used
+ 	// as identifiers in C++.
+@@ -393,6 +394,7 @@ namespace Shared {
+ 			for (size_t i = 0; i < gpu_b_height_offsets.size(); ++i)
+ 				gpu_b_height_offsets[i] = gpus[i].supported_functions.gpu_utilization
+ 					   + gpus[i].supported_functions.pwr_usage
++					   + 3 * gpus[i].buffer_memory.supported
+ 					   + (gpus[i].supported_functions.encoder_utilization or gpus[i].supported_functions.decoder_utilization)
+ 					   + (gpus[i].supported_functions.mem_total or gpus[i].supported_functions.mem_used)
+ 						* (1 + 2*(gpus[i].supported_functions.mem_total and gpus[i].supported_functions.mem_used) + 2*gpus[i].supported_functions.mem_utilization);
+@@ -1884,6 +1886,27 @@ namespace Gpu {
+ 	}
+ 
+ 	namespace Intel {
++		std::string memory_pci;
++		std::chrono::steady_clock::time_point memory_updated;
++		IntelMemory::Snapshot memory_snapshot;
++
++		void collect_memory(gpu_info& gpu, bool initial) {
++			const auto now = std::chrono::steady_clock::now();
++			if (initial or now - memory_updated >= 1s) {
++				memory_snapshot = IntelMemory::collect(Shared::procPath, memory_pci, getuid());
++				memory_updated = now;
++			}
++			gpu.buffer_memory = {
++				.supported = true,
++				.available = memory_snapshot.available,
++				.partial = memory_snapshot.partial,
++				.allocated_lower = static_cast<long long>(memory_snapshot.allocated.lower),
++				.allocated_upper = static_cast<long long>(memory_snapshot.allocated.upper),
++				.resident_lower = static_cast<long long>(memory_snapshot.resident.lower),
++				.resident_upper = static_cast<long long>(memory_snapshot.resident.upper),
++			};
++		}
++
+ 		bool init() {
+ 			if (initialized) return false;
+ 
+@@ -1894,6 +1917,9 @@ namespace Gpu {
+ 			}
+ 
+ 			char *gpu_device_id = get_intel_device_id(gpu_path);
++			std::error_code memory_path_error;
++			memory_pci = fs::canonical(fs::path(gpu_path) / "device", memory_path_error).filename().string();
++			if (memory_path_error) Logger::warning("Intel GPU: Cannot identify PCI device for memory accounting: {}", memory_path_error.message());
+ 			if (!gpu_device_id) {
+ 				Logger::debug("Failed to find Intel GPU device ID, Intel GPUs will not be detected");
+ 				return false;
+@@ -1993,6 +2019,7 @@ namespace Gpu {
+ 
+ 			double freq = pmu_calc(&engines->freq_act.val, 1, t, 1); // in MHz
+ 			gpus_slice->gpu_clock_speed = (unsigned int)round(freq);
++			collect_memory(*gpus_slice, is_init);
+ 
+ 			return true;
+ 		}
+--- /dev/null
++++ btop-1.4.7/src/linux/intel_gpu_memory.cpp
+@@ -0,0 +1,190 @@
++// SPDX-License-Identifier: Apache-2.0
++#include "intel_gpu_memory.hpp"
++
++#include <algorithm>
++#include <charconv>
++#include <fstream>
++#include <limits>
++#include <set>
++#include <sys/stat.h>
++
++namespace Gpu::IntelMemory {
++namespace {
++constexpr std::uint64_t limit = std::numeric_limits<long long>::max();
++
++std::string_view trim(std::string_view value) {
++	const auto first = value.find_first_not_of(" \t\r");
++	if (first == value.npos) return {};
++	return value.substr(first, value.find_last_not_of(" \t\r") - first + 1);
++}
++
++std::optional<std::uint64_t> number(std::string_view text, bool bytes) {
++	text = trim(text);
++	if (text.empty()) return {};
++	std::uint64_t value = 0;
++	const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
++	if (error != std::errc{}) return {};
++	const auto unit = trim(text.substr(static_cast<std::size_t>(end - text.data())));
++	std::uint64_t factor = 1;
++	if (bytes and unit == "KiB") factor = 1024;
++	else if (bytes and unit == "MiB") factor = 1024 * 1024;
++	else if (not unit.empty()) return {};
++	if (value > limit / factor) return {};
++	return value * factor;
++}
++
++bool numeric_name(std::string_view name) {
++	return not name.empty() and
++		   std::all_of(name.begin(), name.end(), [](char value) { return value >= '0' and value <= '9'; });
++}
++
++bool add(std::uint64_t &total, std::uint64_t value) {
++	if (value > limit - total) return false;
++	total += value;
++	return true;
++}
++
++bool read_region(Client &client, std::string_view key, std::string_view value) {
++	if (key.starts_with("drm-total-cycles-")) return true;
++	std::optional<std::uint64_t> *destination = nullptr;
++	if (key.starts_with("drm-total-")) destination = &client.regions[std::string(key.substr(10))].allocated;
++	else if (key.starts_with("drm-shared-")) destination = &client.regions[std::string(key.substr(11))].shared;
++	else if (key.starts_with("drm-resident-")) destination = &client.regions[std::string(key.substr(13))].resident;
++	if (destination == nullptr) return true;
++	if (destination->has_value()) return false;
++	*destination = number(value, true);
++	return destination->has_value();
++}
++
++struct RegionTotals {
++	std::uint64_t allocated_private = 0;
++	std::uint64_t allocated_shared_max = 0;
++	std::uint64_t allocated_sum = 0;
++	std::uint64_t resident_private_min = 0;
++	std::uint64_t resident_shared_max = 0;
++	std::uint64_t resident_sum = 0;
++};
++
++bool account(RegionTotals &total, const Region &region) {
++	const auto allocated = *region.allocated;
++	const auto shared = *region.shared;
++	const auto resident = *region.resident;
++	total.allocated_shared_max = std::max(total.allocated_shared_max, shared);
++	total.resident_shared_max = std::max(total.resident_shared_max, std::min(resident, shared));
++	return add(total.allocated_private, allocated - shared) and add(total.allocated_sum, allocated) and
++		   add(total.resident_private_min, resident - std::min(resident, shared)) and add(total.resident_sum, resident);
++}
++
++bool disappeared(const std::error_code &error) {
++	return error == std::errc::no_such_file_or_directory or error == std::errc::no_such_process;
++}
++
++void scan_process(const std::filesystem::path &process, std::vector<Client> &clients, bool &partial) {
++	std::error_code error;
++	std::filesystem::directory_iterator files(process / "fd", error), end;
++	if (error and not disappeared(error)) partial = true;
++	while (not error and files != end) {
++		const auto descriptor = files->path();
++		const auto target = std::filesystem::read_symlink(descriptor, error).string();
++		if (error and not disappeared(error)) partial = true;
++		if (not error and (target.starts_with("/dev/dri/card") or target.starts_with("/dev/dri/renderD"))) {
++			std::ifstream input(process / "fdinfo" / descriptor.filename());
++			if (input) {
++				auto client = parse_fdinfo(input);
++				if (client) clients.push_back(std::move(*client));
++				else partial = true;
++			} else {
++				std::error_code exists_error;
++				if (std::filesystem::exists(descriptor, exists_error) or
++					(exists_error and not disappeared(exists_error)))
++					partial = true;
++			}
++		}
++		error.clear();
++		files.increment(error);
++		if (error and not disappeared(error)) partial = true;
++	}
++}
++} // namespace
++
++std::optional<Client> parse_fdinfo(std::istream &input) {
++	Client client;
++	std::optional<std::uint64_t> id;
++	std::string driver;
++	std::size_t size = 0;
++	for (std::string line; std::getline(input, line);) {
++		size += line.size() + 1;
++		if (line.size() > 512 or size > 65536) return {};
++		const auto colon = line.find(':');
++		if (colon == line.npos) continue;
++		const auto key = trim(std::string_view(line).substr(0, colon));
++		const auto value = trim(std::string_view(line).substr(colon + 1));
++		if (key == "drm-driver") {
++			if (not driver.empty()) return {};
++			driver = value;
++		} else if (key == "drm-pdev") {
++			if (not client.pci.empty()) return {};
++			client.pci = value;
++		} else if (key == "drm-client-id") {
++			if (id) return {};
++			id = number(value, false);
++			if (not id) return {};
++		} else if (not read_region(client, key, value)) return {};
++	}
++	if (input.bad() or driver != "i915" or client.pci.empty() or not id or client.regions.empty()) return {};
++	for (const auto &[name, region] : client.regions) {
++		if (name.empty() or not region.allocated or not region.shared or not region.resident) return {};
++		if (*region.shared > *region.allocated or *region.resident > *region.allocated) return {};
++	}
++	client.id = *id;
++	return client;
++}
++
++Snapshot aggregate(const std::vector<Client> &clients, std::string_view pci) {
++	Snapshot result;
++	std::map<std::string, RegionTotals> regions;
++	std::set<std::uint64_t> seen;
++	for (const auto &client : clients) {
++		if (client.pci != pci or not seen.insert(client.id).second) continue;
++		for (const auto &[name, region] : client.regions) {
++			if (not region.allocated or not region.shared or not region.resident or
++				*region.shared > *region.allocated or *region.resident > *region.allocated or
++				not account(regions[name], region))
++				return {};
++		}
++		result.clients++;
++	}
++	for (const auto &[name, total] : regions) {
++		// Shared-buffer identities are absent from fdinfo. Report bounds on
++		// their union instead of presenting a sum with duplicate buffers.
++		if (not add(result.allocated.lower, total.allocated_private) or
++			not add(result.allocated.lower, total.allocated_shared_max) or
++			not add(result.allocated.upper, total.allocated_sum) or
++			not add(result.resident.lower, total.resident_private_min) or
++			not add(result.resident.lower, total.resident_shared_max) or
++			not add(result.resident.upper, total.resident_sum))
++			return {};
++	}
++	result.available = result.clients > 0;
++	return result;
++}
++
++Snapshot collect(const std::filesystem::path &proc, std::string_view pci, unsigned int uid) {
++	std::vector<Client> clients;
++	bool partial = false;
++	std::error_code error;
++	std::filesystem::directory_iterator processes(proc, error), end;
++	if (error) return {};
++	while (not error and processes != end) {
++		const auto process = processes->path();
++		if (numeric_name(process.filename().string())) {
++			struct stat status{};
++			if (::stat(process.c_str(), &status) == 0 and status.st_uid == uid) scan_process(process, clients, partial);
++		}
++		processes.increment(error);
++	}
++	auto result = aggregate(clients, pci);
++	result.partial = partial or static_cast<bool>(error);
++	return result;
++}
++} // namespace Gpu::IntelMemory
+--- /dev/null
++++ btop-1.4.7/src/linux/intel_gpu_memory.hpp
+@@ -0,0 +1,42 @@
++// SPDX-License-Identifier: Apache-2.0
++#pragma once
++
++#include <cstdint>
++#include <filesystem>
++#include <istream>
++#include <map>
++#include <optional>
++#include <string>
++#include <string_view>
++#include <vector>
++
++namespace Gpu::IntelMemory {
++struct Region {
++	std::optional<std::uint64_t> allocated;
++	std::optional<std::uint64_t> shared;
++	std::optional<std::uint64_t> resident;
++};
++
++struct Client {
++	std::string pci;
++	std::uint64_t id = 0;
++	std::map<std::string, Region> regions;
++};
++
++struct Range {
++	std::uint64_t lower = 0;
++	std::uint64_t upper = 0;
++};
++
++struct Snapshot {
++	Range allocated;
++	Range resident;
++	std::size_t clients = 0;
++	bool available = false;
++	bool partial = false;
++};
++
++std::optional<Client> parse_fdinfo(std::istream &input);
++Snapshot aggregate(const std::vector<Client> &clients, std::string_view pci);
++Snapshot collect(const std::filesystem::path &proc, std::string_view pci, unsigned int uid);
++} // namespace Gpu::IntelMemory
+--- btop-1.4.7.orig/tests/CMakeLists.txt
++++ btop-1.4.7/tests/CMakeLists.txt
+@@ -18,3 +18,11 @@ target_link_libraries(btop_test libbtop_
+ 
+ include(GoogleTest)
+ gtest_discover_tests(btop_test)
++
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
++  add_executable(intel_gpu_memory_test intel_gpu_memory.cpp ../src/linux/intel_gpu_memory.cpp)
++  target_include_directories(intel_gpu_memory_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
++  target_link_libraries(intel_gpu_memory_test PRIVATE GTest::gtest_main)
++  target_compile_options(intel_gpu_memory_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
++  gtest_discover_tests(intel_gpu_memory_test)
++endif()
+--- /dev/null
++++ btop-1.4.7/tests/intel_gpu_memory.cpp
+@@ -0,0 +1,158 @@
++// SPDX-License-Identifier: Apache-2.0
++#include "linux/intel_gpu_memory.hpp"
++
++#include <fstream>
++#include <limits>
++#include <sstream>
++#include <unistd.h>
++
++#include <gtest/gtest.h>
++
++namespace {
++using namespace Gpu::IntelMemory;
++constexpr auto pci = "0000:00:02.0";
++
++std::string record(std::string_view fields, unsigned int id = 1, std::string_view device = pci) {
++	return "drm-driver: i915\ndrm-pdev: " + std::string(device) + "\ndrm-client-id: " + std::to_string(id) + "\n" +
++		   std::string(fields);
++}
++
++std::optional<Client> parse(std::string_view text) {
++	std::istringstream input{std::string(text)};
++	return parse_fdinfo(input);
++}
++
++Client client(std::uint64_t allocated, std::uint64_t shared, std::uint64_t resident, unsigned int id = 1) {
++	return Client{pci, id, {{"system0", Region{allocated, shared, resident}}}};
++}
++
++TEST(IntelGpuMemory, ParsesWhitespaceUnitsAndZeroValues) {
++	const auto parsed =
++		parse(record("drm-total-system0: 2 MiB\ndrm-shared-system0:\t0\ndrm-resident-system0: 3 KiB\n"));
++	ASSERT_TRUE(parsed);
++	EXPECT_EQ(parsed->regions.at("system0").allocated, 2 * 1024 * 1024);
++	EXPECT_EQ(parsed->regions.at("system0").resident, 3 * 1024);
++	EXPECT_EQ(parsed->regions.at("system0").shared, 0);
++}
++
++TEST(IntelGpuMemory, IgnoresEngineCycleCounters) {
++	EXPECT_TRUE(parse(record(
++		"drm-total-cycles-render: 123\ndrm-total-system0: 0\ndrm-shared-system0: 0\ndrm-resident-system0: 0\n")));
++}
++
++TEST(IntelGpuMemory, RejectsIncompleteDuplicateOrInconsistentRecords) {
++	EXPECT_FALSE(parse(record("drm-total-system0: 10\ndrm-resident-system0: 5\n")));
++	EXPECT_FALSE(parse(
++		record("drm-total-system0: 10\ndrm-total-system0: 10\ndrm-shared-system0: 0\ndrm-resident-system0: 5\n")));
++	EXPECT_FALSE(parse(record("drm-total-system0: 10\ndrm-shared-system0: 11\ndrm-resident-system0: 5\n")));
++	EXPECT_FALSE(parse(record("drm-total-system0: 10\ndrm-shared-system0: 0\ndrm-resident-system0: 11\n")));
++	EXPECT_FALSE(
++		parse(record("drm-client-id: 2\ndrm-total-system0: 0\ndrm-shared-system0: 0\ndrm-resident-system0: 0\n")));
++}
++
++TEST(IntelGpuMemory, RejectsInvalidNumbersAndOverflow) {
++	for (const auto value :
++		 {"", "-1", "+1", "1.5 MiB", "1 GB", "9223372036854775808", "9007199254740992 KiB", "1 KiB garbage"}) {
++		EXPECT_FALSE(parse(
++			record("drm-total-system0: " + std::string(value) + "\ndrm-shared-system0: 0\ndrm-resident-system0: 0\n")))
++			<< value;
++	}
++}
++
++TEST(IntelGpuMemory, RejectsOversizedRecordsAndLines) {
++	EXPECT_FALSE(parse(record(std::string(513, 'x'))));
++	std::string large;
++	for (int line = 0; line < 700; ++line)
++		large += std::string(100, 'x') + '\n';
++	EXPECT_FALSE(parse(record(large)));
++}
++
++TEST(IntelGpuMemory, CountsPrivateBuffersExactlyAndDeduplicatesClients) {
++	auto first = client(100, 0, 60);
++	auto duplicate = client(900, 0, 900);
++	auto foreign = client(1000, 0, 1000, 2);
++	foreign.pci = "0000:03:00.0";
++	const auto snapshot = aggregate({first, duplicate, client(40, 0, 10, 2), foreign}, pci);
++	ASSERT_TRUE(snapshot.available);
++	EXPECT_EQ(snapshot.clients, 2);
++	EXPECT_EQ(snapshot.allocated.lower, 140);
++	EXPECT_EQ(snapshot.allocated.upper, 140);
++	EXPECT_EQ(snapshot.resident.lower, 70);
++	EXPECT_EQ(snapshot.resident.upper, 70);
++}
++
++TEST(IntelGpuMemory, BoundsPhysicalUnionOfSharedBuffers) {
++	// Client 1: private 16 (8 resident), shared buffer 16 (resident).
++	// Client 2: private 8 (resident), the SAME shared buffer 16.
++	// Independent physical union: 40 allocated and 32 resident bytes.
++	const auto snapshot = aggregate({client(32, 16, 24), client(24, 16, 24, 2)}, pci);
++	ASSERT_TRUE(snapshot.available);
++	EXPECT_EQ(snapshot.allocated.lower, 40);
++	EXPECT_EQ(snapshot.allocated.upper, 56);
++	EXPECT_EQ(snapshot.resident.lower, 32);
++	EXPECT_EQ(snapshot.resident.upper, 48);
++}
++
++TEST(IntelGpuMemory, DoesNotMergeDistinctMemoryRegions) {
++	auto first = client(16, 16, 16);
++	auto second = client(32, 32, 32, 2);
++	second.regions["stolen-system0"] = second.regions.extract("system0").mapped();
++	const auto snapshot = aggregate({first, second}, pci);
++	EXPECT_EQ(snapshot.allocated.lower, 48);
++	EXPECT_EQ(snapshot.resident.lower, 48);
++}
++
++TEST(IntelGpuMemory, DistinguishesZeroFromUnavailableAndRejectsSumOverflow) {
++	const auto zero = aggregate({client(0, 0, 0)}, pci);
++	EXPECT_TRUE(zero.available);
++	EXPECT_EQ(zero.resident.upper, 0);
++	EXPECT_FALSE(aggregate({}, pci).available);
++	const auto huge = static_cast<std::uint64_t>(std::numeric_limits<long long>::max());
++	EXPECT_FALSE(aggregate({client(huge, 0, huge), client(1, 0, 1, 2)}, pci).available);
++}
++
++class IntelGpuMemoryProc : public testing::Test {
++  protected:
++	std::filesystem::path proc;
++
++	void SetUp() override {
++		std::string name = (std::filesystem::temp_directory_path() / "btop-gpu-test-XXXXXX").string();
++		ASSERT_NE(::mkdtemp(name.data()), nullptr);
++		proc = name;
++	}
++	void TearDown() override {
++		std::filesystem::remove_all(proc);
++	}
++	void descriptor(int pid, int fd, std::string_view contents, std::string_view target = "/dev/dri/renderD128") {
++		const auto process = proc / std::to_string(pid);
++		std::filesystem::create_directories(process / "fd");
++		std::filesystem::create_directories(process / "fdinfo");
++		std::filesystem::create_symlink(target, process / "fd" / std::to_string(fd));
++		std::ofstream(process / "fdinfo" / std::to_string(fd)) << contents;
++	}
++};
++
++TEST_F(IntelGpuMemoryProc, DeduplicatesDescriptorsAcrossProcessesAndIgnoresNonDrmFiles) {
++	const auto data = record("drm-total-system0: 16 KiB\ndrm-shared-system0: 0\ndrm-resident-system0: 8 KiB\n");
++	descriptor(100, 3, data);
++	descriptor(100, 4, data);
++	descriptor(200, 5, data);
++	descriptor(200, 6, data, "/tmp/not-a-drm-device");
++	const auto snapshot = collect(proc, pci, getuid());
++	ASSERT_TRUE(snapshot.available);
++	EXPECT_EQ(snapshot.clients, 1);
++	EXPECT_EQ(snapshot.allocated.lower, 16 * 1024);
++	EXPECT_EQ(snapshot.resident.lower, 8 * 1024);
++	EXPECT_FALSE(snapshot.partial);
++}
++
++TEST_F(IntelGpuMemoryProc, MarksMalformedDrmRecordsAsPartialAndFiltersUser) {
++	descriptor(100, 3, "invalid");
++	descriptor(200, 4, record("drm-total-system0: 4\ndrm-shared-system0: 0\ndrm-resident-system0: 2\n"));
++	const auto snapshot = collect(proc, pci, getuid());
++	EXPECT_TRUE(snapshot.available);
++	EXPECT_TRUE(snapshot.partial);
++	EXPECT_FALSE(collect(proc, pci, getuid() + 1).available);
++	EXPECT_FALSE(collect(proc / "missing", pci, getuid()).available);
++}
++} // namespace

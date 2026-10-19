@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+set -e
+
+if [ "$1" = configure ]; then
+    setcap cap_perfmon=ep /usr/bin/btop
+fi
+
+#DEBHELPER#

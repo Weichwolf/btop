@@ -57,6 +57,7 @@ tab-size = 4
 #include "../btop_tools.hpp"
 
 #if defined(GPU_SUPPORT)
+	#include "intel_gpu_memory.hpp"
 	// Redefining C++ keywords fortunately has a warning in clang, however it's unavoidable here
 	// since the C library uses "class" as a struct member and keywords are not allowed to be used
 	// as identifiers in C++.
@@ -393,6 +394,7 @@ namespace Shared {
 			for (size_t i = 0; i < gpu_b_height_offsets.size(); ++i)
 				gpu_b_height_offsets[i] = gpus[i].supported_functions.gpu_utilization
 					   + gpus[i].supported_functions.pwr_usage
+					   + 3 * gpus[i].buffer_memory.supported
 					   + (gpus[i].supported_functions.encoder_utilization or gpus[i].supported_functions.decoder_utilization)
 					   + (gpus[i].supported_functions.mem_total or gpus[i].supported_functions.mem_used)
 						* (1 + 2*(gpus[i].supported_functions.mem_total and gpus[i].supported_functions.mem_used) + 2*gpus[i].supported_functions.mem_utilization);
@@ -1546,7 +1548,8 @@ namespace Gpu {
 				"librocm_smi64.so",
 				"librocm_smi64.so.5", // fedora
 				"librocm_smi64.so.1.0", // debian
-				"librocm_smi64.so.6"
+				"librocm_smi64.so.6",
+				"librocm_smi64.so.7" // rocm 7 support / Ubuntu 26.04
 			};
 
 			for (const auto& l : libRocAlts) {
@@ -1883,6 +1886,27 @@ namespace Gpu {
 	}
 
 	namespace Intel {
+		std::string memory_pci;
+		std::chrono::steady_clock::time_point memory_updated;
+		IntelMemory::Snapshot memory_snapshot;
+
+		void collect_memory(gpu_info& gpu, bool initial) {
+			const auto now = std::chrono::steady_clock::now();
+			if (initial or now - memory_updated >= 1s) {
+				memory_snapshot = IntelMemory::collect(Shared::procPath, memory_pci, getuid());
+				memory_updated = now;
+			}
+			gpu.buffer_memory = {
+				.supported = true,
+				.available = memory_snapshot.available,
+				.partial = memory_snapshot.partial,
+				.allocated_lower = static_cast<long long>(memory_snapshot.allocated.lower),
+				.allocated_upper = static_cast<long long>(memory_snapshot.allocated.upper),
+				.resident_lower = static_cast<long long>(memory_snapshot.resident.lower),
+				.resident_upper = static_cast<long long>(memory_snapshot.resident.upper),
+			};
+		}
+
 		bool init() {
 			if (initialized) return false;
 
@@ -1893,6 +1917,9 @@ namespace Gpu {
 			}
 
 			char *gpu_device_id = get_intel_device_id(gpu_path);
+			std::error_code memory_path_error;
+			memory_pci = fs::canonical(fs::path(gpu_path) / "device", memory_path_error).filename().string();
+			if (memory_path_error) Logger::warning("Intel GPU: Cannot identify PCI device for memory accounting: {}", memory_path_error.message());
 			if (!gpu_device_id) {
 				Logger::debug("Failed to find Intel GPU device ID, Intel GPUs will not be detected");
 				return false;
@@ -1992,6 +2019,7 @@ namespace Gpu {
 
 			double freq = pmu_calc(&engines->freq_act.val, 1, t, 1); // in MHz
 			gpus_slice->gpu_clock_speed = (unsigned int)round(freq);
+			collect_memory(*gpus_slice, is_init);
 
 			return true;
 		}

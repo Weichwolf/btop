@@ -1,4 +1,4 @@
-# gitginore template for creating Snap packages
+# gitignore template for creating Snap packages
 # website: https://snapcraft.io/
 
 parts/
@@ -54,7 +54,31 @@ bin
 btop
 /obj/
 config.h
-.*/
+
+# Local Debian builds, quilt state and package output
+/.deb-build/
+/.pc/
+/debian/.debhelper/
+/debian/btop/
+/debian/tmp/
+/debian/files
+/debian/debhelper-build-stamp
+/debian/*.substvars
+/debian/*.debhelper
+/debian/*.log
+*.deb
+*.ddeb
+*.udeb
+*.build
+*.buildinfo
+*.changes
+*.dsc
+*.debian.tar.*
+*.orig.tar.*
+
+# Local editor state
+/.idea/
+/.vscode/
 
 # Optional libraries
 lib/rocm_smi_lib

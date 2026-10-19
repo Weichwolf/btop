@@ -1,0 +1,28 @@
+From: Dave Chiluk <chiluk@ubuntu.com>
+Date: Sat, 9 May 2026 00:19:35 -0500
+Subject: Fix btop with amd gpu on rocm 7 as in Ubuntu 26.04
+
+Fixes #1651
+
+(cherry picked from commit 07fff6c6cd9fa6451d49ad95de33f7f399d150aa as the PR
+mentioned below was already merged)
+
+Forwarded: https://github.com/aristocratos/btop/pull/1652
+---
+ src/linux/btop_collect.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/linux/btop_collect.cpp b/src/linux/btop_collect.cpp
+index 64eaffe..264bcff 100644
+--- a/src/linux/btop_collect.cpp
++++ b/src/linux/btop_collect.cpp
+@@ -1546,7 +1546,8 @@ namespace Gpu {
+ 				"librocm_smi64.so",
+ 				"librocm_smi64.so.5", // fedora
+ 				"librocm_smi64.so.1.0", // debian
+-				"librocm_smi64.so.6"
++				"librocm_smi64.so.6",
++				"librocm_smi64.so.7" // rocm 7 support / Ubuntu 26.04
+ 			};
+ 
+ 			for (const auto& l : libRocAlts) {

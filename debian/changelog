@@ -1,0 +1,159 @@
+btop (1.4.7-1~bpo13+1) trixie-backports; urgency=medium
+
+  * Non-maintainer upload.
+  * Add Intel i915 GPU buffer memory accounting and display allocation
+    and residency bounds for readable user clients.
+  * Add sanitizer-tested parser, accounting and procfs regression tests.
+
+ -- Weichwolf <56591353+Weichwolf@users.noreply.github.com>  Mon, 19 Oct 2026 15:42:34 +0200
+
+btop (1.4.7-1~bpo13+0) trixie-backports; urgency=medium
+
+  * Non-maintainer upload.
+  * Rebuild for Debian 13 (trixie).
+  * Correct the Recommends field name so the optional AMD GPU support
+    recommendation is recognized by dpkg.
+  * Exclude local build artifacts from source diffs and document rebuilding.
+  * Use watch format 4 and an explicit Priority field for Trixie tooling.
+  * Enable CAP_PERFMON on the installed binary for Intel GPU monitoring.
+  * Export Debian build flags and honor C flags in the Intel GPU sources.
+
+ -- Weichwolf <56591353+Weichwolf@users.noreply.github.com>  Mon, 19 Oct 2026 14:56:10 +0200
+
+btop (1.4.7-1) unstable; urgency=medium
+
+  * New upstream release
+  * Bump Debian Policy version to 4.7.4
+  * Recommend rocm-smi to enable stats for AMD GPUs (Closes: #1121425)
+  * Backport upstream commit to detect librocm_smi64.so.7 when available
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 31 May 2026 00:33:33 +0000
+
+btop (1.4.6-2) unstable; urgency=medium
+
+  * Fix printf format string error in info target visible on Launchpad builds,
+    which prevented 1.4.6-1 from building in Ubuntu resolute-proposed and thus
+    latest btop had not migrated to Ubuntu resolute (26.04)
+
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 12 Feb 2026 12:12:12 +0000
+
+btop (1.4.6-1) unstable; urgency=medium
+
+  * New upstream release
+  * Switch debian/watch to use GitHub template and uscan version 5
+  * Add Lintian override for missing OpenPGP signature check
+  * Update Debian copyright for 2026
+  * Drop redundant `Priority: optional`
+  * Bump Debian Policy version
+
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 07 Jan 2026 05:38:41 +0000
+
+btop (1.4.5-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #1120916)
+  * Update and format debian/copyright
+  * Drop obsolete `Rules-Requires-Root: no`
+  * Add patch to have README placed in correct path by upstream build
+  * Use upstream man page and drop the custom Debian one as obsolete
+  * Make build properly verbose so Debian log analyzers can see what happened
+
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 22 Nov 2025 11:50:08 -0800
+
+btop (1.4.4-1) unstable; urgency=medium
+
+  [ Otto Kekäläinen ]
+  * New upstream release 1.4.4 (Closes: #1084966)
+
+  [ Joel Orón Valiente ]
+  * debian/control: Bump standards version to 4.7.2.
+  * Add all new packages to licensed files to fix lintian warning.
+  * Add hardening flags to fix lintian warning: hardening-no-fortify-functions.
+  * Add Otto, Andrew and Joel to the copyright.
+
+ -- Otto Kekäläinen <otto@debian.org>  Mon, 03 Nov 2025 13:23:57 -0800
+
+btop (1.3.2-0.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Bug fixes release from upstream. (Closes: #1100022, #1100542)
+
+ -- Andrew Lee (李健秋) <ajqlee@debian.org>  Tue, 06 May 2025 12:12:58 +0200
+
+btop (1.3.0-1) unstable; urgency=medium
+
+  * New upstream release v1.3.0
+  * debian/control: Use my debian email
+  * debian/control: Bump standards-version
+  * debian/copyright: refresh copyright
+
+ -- Marius Gripsgard <mariogrip@debian.org>  Sat, 27 Jan 2024 02:30:00 +0100
+
+btop (1.2.13-1) unstable; urgency=medium
+
+  * New upstream release v1.2.13
+
+ -- Marius Gripsgard <marius@ubports.com>  Mon, 07 Nov 2022 01:12:16 +0100
+
+btop (1.2.12-1) unstable; urgency=medium
+
+  * New upstream release v1.2.12
+  * Refresh copyright file to mach new upstream release
+  * Bump standards-version to 4.6.1
+
+ -- Marius Gripsgard <marius@ubports.com>  Sat, 29 Oct 2022 01:34:09 +0200
+
+btop (1.2.7-1) unstable; urgency=medium
+
+  * New upstream release v1.2.7
+
+ -- Marius Gripsgard <marius@ubports.com>  Wed, 01 Jun 2022 01:17:58 +0200
+
+btop (1.2.6-1) unstable; urgency=medium
+
+  * New upstrem release v1.2.6
+
+ -- Marius Gripsgard <marius@ubports.com>  Sun, 17 Apr 2022 01:10:38 +0200
+
+btop (1.2.5-1) unstable; urgency=medium
+
+  * New upstream release v1.2.5
+
+ -- Marius Gripsgard <marius@ubports.com>  Sun, 06 Mar 2022 19:50:56 +0100
+
+btop (1.2.4-1) unstable; urgency=medium
+
+  * New upstream release v1.2.4
+
+ -- Marius Gripsgard <marius@ubports.com>  Mon, 28 Feb 2022 10:10:32 +0100
+
+btop (1.2.3-2) unstable; urgency=medium
+
+  [ Vagrant Cascadian ]
+  * debian/rules: Remove embedded build paths by passing -ffile-prefix-map
+    via ADDFLAGS variable. (closes: #1005792)
+
+ -- Marius Gripsgard <marius@ubports.com>  Sun, 20 Feb 2022 21:08:26 +0100
+
+btop (1.2.3-1) unstable; urgency=medium
+
+  * New upstream release v1.2.3
+
+ -- Marius Gripsgard <marius@ubports.com>  Sun, 20 Feb 2022 20:19:43 +0100
+
+btop (1.2.2-1) unstable; urgency=medium
+
+  * New upstream release v1.2.2
+  * debian/control:
+     - Add Vcs pointing to our salsa repo
+     - Only build for linux based arches
+  * debian/copyright: Add new files added upstream
+  * debian/patches: Remove upstreamed patch:
+    - 0001-Fix-spelling-mistakes-caught-by-debian-lintian.patch
+
+ -- Marius Gripsgard <marius@ubports.com>  Mon, 14 Feb 2022 23:32:20 +0100
+
+btop (1.1.3-1) unstable; urgency=medium
+
+  * Initial release. Closes: #1001633
+
+ -- Marius Gripsgard <marius@ubports.com>  Mon, 13 Dec 2021 13:16:11 +0100

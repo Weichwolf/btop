@@ -1,0 +1,3 @@
+# This project does not sign git tags, nor release detached signatures,
+# so there is nothing to check in uscan.
+btop source: debian-watch-does-not-check-openpgp-signature
