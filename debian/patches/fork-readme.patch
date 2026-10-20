@@ -190,7 +190,7 @@ Last-Update: 2026-10-20
 -git checkout OSX
 -gmake
 +```sh
-+sudo apt install --no-install-recommends ./btop_1.4.7-1~bpo13+1_amd64.deb
++sudo apt install --no-install-recommends ./btop_1.4.7-1.bpo13+1_amd64.deb
  ```
  
 -**FreeBSD**

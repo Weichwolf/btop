@@ -33,7 +33,7 @@ Generated packages and logs are excluded from Git.
 Install the downloaded package from its directory:
 
 ```sh
-sudo apt install --no-install-recommends ./btop_1.4.7-1~bpo13+1_amd64.deb
+sudo apt install --no-install-recommends ./btop_1.4.7-1.bpo13+1_amd64.deb
 ```
 
 The package grants `/usr/bin/btop` **CAP_PERFMON** for Intel utilization counters;
