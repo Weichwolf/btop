@@ -3,11 +3,11 @@ Description: Document the Debian and Intel GPU fork concisely
  package usage and links to the upstream manual and Debian build guide.
 Author: Weichwolf <56591353+Weichwolf@users.noreply.github.com>
 Forwarded: not-needed
-Last-Update: 2026-10-19
+Last-Update: 2026-10-20
 
 --- btop-1.4.7.orig/README.md
 +++ btop-1.4.7/README.md
-@@ -1,1600 +1,61 @@
+@@ -1,1600 +1,62 @@
 -# ![btop++](Img/logo.png)
 +# btop — Debian 13 / Intel GPU
  
@@ -81,11 +81,12 @@ Last-Update: 2026-10-19
  
 +Current package: **1.4.7-1~bpo13+1**, a local backport outside the Debian archive.
 +See [build instructions and focused tests](debian/README.source) for the isolated
-+`sbuild` workflow. Sources are published here; generated packages and logs are
-+excluded from Git.
++`sbuild` workflow. Download the amd64 package from
++[GitHub Releases](https://github.com/Weichwolf/btop/releases/latest).
++Generated packages and logs are excluded from Git.
  
 -## News
-+After building, install from the repository root:
++Install the downloaded package from its directory:
  
 -##### 22 March 2026
 -
@@ -188,8 +189,10 @@ Last-Update: 2026-10-19
 -cd btop
 -git checkout OSX
 -gmake
--```
--
++```sh
++sudo apt install --no-install-recommends ./btop_1.4.7-1~bpo13+1_amd64.deb
+ ```
+ 
 -**FreeBSD**
 -```bash
 -sudo pkg install gmake gcc11 coreutils git lowdown
@@ -197,15 +200,28 @@ Last-Update: 2026-10-19
 -cd btop
 -git checkout freebsd
 -gmake
++The package grants `/usr/bin/btop` **CAP_PERFMON** for Intel utilization counters;
++btop runs as your normal user. On Debian kernels with
++`kernel.perf_event_paranoid=3`, an administrator must also allow these counters:
++
 +```sh
-+sudo apt install --no-install-recommends ./.deb-build/btop_1.4.7-1~bpo13+1_amd64.deb
++sudo sysctl -w kernel.perf_event_paranoid=2
  ```
  
 -Note that GNU make (`gmake`) is recommended but not required for macOS/OSX but it is required on FreeBSD.
--
--
++This also permits unprivileged profiling of the caller's own userspace processes.
++To persist it, put `kernel.perf_event_paranoid = 2` in
++`/etc/sysctl.d/90-btop-intel-gpu.conf`. The package does not change this setting.
++The memory collector itself needs no additional capabilities.
+ 
++## Development
+ 
 -##### 6 October 2021
--
++The Intel collector has 11 focused parser/accounting/procfs tests, tested with
++ASan/UBSan, plus a local hardware check using a shared 64 MiB i915 buffer.
++Debian compiler flags are exported for C and C++. Known build limitation:
++upstream's later `-fstack-protector` overrides Debian's stronger setting for C++.
+ 
 -macOS development have been started by [@joske](https://github.com/joske), big thanks :)
 -See branch [OSX](https://github.com/aristocratos/btop/tree/OSX) for current progress.
 -
@@ -821,10 +837,7 @@ Last-Update: 2026-10-19
 -   This will automatically build a release version of btop.
 -
 -   Some useful options to pass to the configure step:
-+The package grants `/usr/bin/btop` **CAP_PERFMON** for Intel utilization counters;
-+btop runs as your normal user. On Debian kernels with
-+`kernel.perf_event_paranoid=3`, an administrator must also allow these counters:
- 
+-
 -   | Configure flag                  | Description                                                             |
 -   |---------------------------------|-------------------------------------------------------------------------|
 -   | `-DBTOP_LTO=<ON\|OFF>`          | Enables link time optimization (ON by default)                          |
@@ -1631,25 +1644,11 @@ Last-Update: 2026-10-19
 -      --default-config    Print default config to standard output
 -  -h, --help              Show this help message and exit
 -  -V, --version           Show a version message and exit (more with --version)
-+```sh
-+sudo sysctl -w kernel.perf_event_paranoid=2
- ```
- 
+-```
+-
 -## LICENSE
 -
 -[Apache License 2.0](LICENSE)
-+This also permits unprivileged profiling of the caller's own userspace processes.
-+To persist it, put `kernel.perf_event_paranoid = 2` in
-+`/etc/sysctl.d/90-btop-intel-gpu.conf`. The package does not change this setting.
-+The memory collector itself needs no additional capabilities.
-+
-+## Development
-+
-+The Intel collector has 11 focused parser/accounting/procfs tests, tested with
-+ASan/UBSan, plus a local hardware check using a shared 64 MiB i915 buffer.
-+Debian compiler flags are exported for C and C++. Known build limitation:
-+upstream's later `-fstack-protector` overrides Debian's stronger setting for C++.
-+
 +Full usage, dependencies and other platforms:
 +[upstream v1.4.7 documentation](https://github.com/aristocratos/btop/blob/v1.4.7/README.md).
 +License: [Apache-2.0](LICENSE); third-party notices remain in their source files
