@@ -24,7 +24,7 @@ generations and the xe driver have not been validated for this addition.
 
 ## Debian package
 
-Current package: **1.4.7-1~bpo13+1**, a local backport outside the Debian archive.
+Current package: **1.4.7-1~bpo13+2**, a local backport outside the Debian archive.
 See [build instructions and focused tests](debian/README.source) for the isolated
 `sbuild` workflow. Download the amd64 package from
 [GitHub Releases](https://github.com/Weichwolf/btop/releases/latest).
@@ -33,7 +33,7 @@ Generated packages and logs are excluded from Git.
 Install the downloaded package from its directory:
 
 ```sh
-sudo apt install --no-install-recommends ./btop_1.4.7-1.bpo13+1_amd64.deb
+sudo apt install --no-install-recommends ./btop_1.4.7-1.bpo13+2_amd64.deb
 ```
 
 The package grants `/usr/bin/btop` **CAP_PERFMON** for Intel utilization counters;

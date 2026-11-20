@@ -58,14 +58,14 @@ Build from the repository root (the output directory is ignored by Git):
   dget --download-only https://deb.debian.org/debian/pool/main/b/btop/btop_1.4.7-1.dsc
   dpkg-source --before-build ..
   dpkg-source --build ..
+  btop_version=$(dpkg-parsechangelog -l ../debian/changelog -S Version)
   sbuild --chroot-mode=unshare --dist=trixie-backports --arch=amd64 --jobs=8 \
     --no-run-lintian --debbuildopt=-v1.3.2-0.1 \
     --chroot="$HOME/.cache/sbuild/trixie-amd64.tar" \
-    btop_1.4.7-1~bpo13+1.dsc
+    "btop_${btop_version}.dsc"
 
 Check the result with the host's lintian:
-  lintian btop_1.4.7-1~bpo13+1.dsc \
-    btop_1.4.7-1~bpo13+1_amd64.changes
+  lintian "btop_${btop_version}.dsc" "btop_${btop_version}_amd64.changes"
 
 Simulate installation with apt before installing the resulting amd64 .deb.
 

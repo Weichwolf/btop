@@ -1,3 +1,10 @@
+btop (1.4.7-1~bpo13+2) trixie-backports; urgency=medium
+
+  * Skip the unused Intel RC6 residency counter to avoid an i915 kernel
+    deadlock.
+
+ -- Weichwolf <56591353+Weichwolf@users.noreply.github.com>  Fri, 20 Nov 2026 09:17:36 +0100
+
 btop (1.4.7-1~bpo13+1) trixie-backports; urgency=medium
 
   * Non-maintainer upload.

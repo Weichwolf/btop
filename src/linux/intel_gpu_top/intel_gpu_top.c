@@ -485,11 +485,6 @@ static void init_aggregate_counters(struct engines *engines)
 	pmu->type = igt_perf_type_id(engines->device);
 	pmu->config = I915_PMU_ACTUAL_FREQUENCY;
 	pmu->present = true;
-
-	pmu = &engines->rc6;
-	pmu->type = igt_perf_type_id(engines->device);
-	pmu->config = I915_PMU_RC6_RESIDENCY;
-	pmu->present = true;
 }
 
 int pmu_init(struct engines *engines)
@@ -511,15 +506,13 @@ int pmu_init(struct engines *engines)
 
 	init_aggregate_counters(engines);
 
+	/* Skip RC6 residency: its i915 perf callback can deadlock the kernel. */
 	for (i = 0; i < engines->num_gts; i++) {
 		engines->freq_req_gt[i].config = __I915_PMU_REQUESTED_FREQUENCY(i);
 		_open_pmu(type, engines->num_counters, &engines->freq_req_gt[i], engines->fd);
 
 		engines->freq_act_gt[i].config = __I915_PMU_ACTUAL_FREQUENCY(i);
 		_open_pmu(type, engines->num_counters, &engines->freq_act_gt[i], engines->fd);
-
-		engines->rc6_gt[i].config = __I915_PMU_RC6_RESIDENCY(i);
-		_open_pmu(type, engines->num_counters, &engines->rc6_gt[i], engines->fd);
 	}
 
 	for (i = 0; i < engines->num_engines; i++) {
@@ -615,7 +608,6 @@ void pmu_sample(struct engines *engines)
 
 	engines->freq_req.val.cur = engines->freq_req.val.prev = 0;
 	engines->freq_act.val.cur = engines->freq_act.val.prev = 0;
-	engines->rc6.val.cur = engines->rc6.val.prev = 0;
 
 	for (i = 0; i < engines->num_gts; i++) {
 		update_sample(&engines->freq_req_gt[i], val);
@@ -625,10 +617,6 @@ void pmu_sample(struct engines *engines)
 		update_sample(&engines->freq_act_gt[i], val);
 		engines->freq_act.val.cur += engines->freq_act_gt[i].val.cur;
 		engines->freq_act.val.prev += engines->freq_act_gt[i].val.prev;
-
-		update_sample(&engines->rc6_gt[i], val);
-		engines->rc6.val.cur += engines->rc6_gt[i].val.cur;
-		engines->rc6.val.prev += engines->rc6_gt[i].val.prev;
 	}
 
 	engines->freq_req.val.cur /= engines->num_gts;
@@ -636,9 +624,6 @@ void pmu_sample(struct engines *engines)
 
 	engines->freq_act.val.cur /= engines->num_gts;
 	engines->freq_act.val.prev /= engines->num_gts;
-
-	engines->rc6.val.cur /= engines->num_gts;
-	engines->rc6.val.prev /= engines->num_gts;
 
 	update_sample(&engines->irq, val);
 

@@ -3,3 +3,4 @@ Fix-btop-with-amd-gpu-on-rocm-7-as-in-Ubuntu-26.04.patch
 honor-intel-c-buildflags.patch
 intel-shared-memory-accounting.patch
 fork-readme.patch
+skip-i915-rc6-counter.patch
